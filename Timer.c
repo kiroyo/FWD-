@@ -323,3 +323,159 @@ void Gpt_DeInit(void)
 
 #endif
 
+
+/*
+ * Service name: Gpt_StartTimer
+ * SWS_Item: SWS_Gpt_00284
+ * SRS_Item: (SRS_Gpt_12128)
+ * Sync/Async: Synchronous
+ * Reentrancy: Reentrant (but not for the same timer channel)
+ * Description: Starts a timer channel.
+ */
+
+void Gpt_StartTimer(Gpt_ChannelType Channel, Gpt_ValueType Value)
+{
+
+    if (Gpt_State == GPT_UNINITALIZED) /* Check if the Gpt module is initialized or not */
+    {
+#if (GPT_DRIVER_CONFIGURATION_GPT_DEV_ERROR_DETECT == STD_ON)
+
+         /* SWS_Gpt_00224, SRS_BSW_00406 */
+
+        Det_ReportError(MODULE_ID, INSTANCE_ID, GPT_START_TIMER_SERVICE_ID, GPT_E_UNINIT);
+#endif
+    }
+    else if (Gpt_CheckChannelIndex(Channel) == FALSE) /* Check if the timer channel is out of range */
+    {
+#if (GPT_DRIVER_CONFIGURATION_GPT_DEV_ERROR_DETECT == STD_ON)
+
+        /* SWS_Gpt_00212 */
+
+        Det_ReportError(MODULE_ID, INSTANCE_ID, GPT_START_TIMER_SERVICE_ID, GPT_E_PARAM_CHANNEL);
+#endif
+
+    }
+
+    /* Check if the value of ticks is out of range or 0 */
+    else if ((Value == TIMER_TICKS_0) || (Value > GptChannelConfiguration[GptChannelSetting[Channel].Gpt_ChannelConfigIndex].GptChannelTickValueMax))
+    {
+#if (GPT_DRIVER_CONFIGURATION_GPT_DEV_ERROR_DETECT == STD_ON)
+
+        /* SWS_Gpt_00218 */
+
+        Det_ReportError(MODULE_ID, INSTANCE_ID, GPT_START_TIMER_SERVICE_ID, GPT_E_PARAM_VALUE);
+#endif
+    }
+    else if (Gpt_ChannelState[Channel] == CHANNEL_RUNNING)
+    {
+        /* SWS_Gpt_00084 */
+       /* Det_ReportRuntimeError(MODULE_ID, INSTANCE_ID, GPT_START_TIMER_SERVICE_ID, GPT_E_BUSY); */
+    }
+
+    else
+    {
+
+        /* SWS_Gpt_00364, SWS_Gpt_00115 */
+        Gpt_ChannelState[Channel] = CHANNEL_RUNNING; /* State of the selected timer channel is changed to "running" */
+        uint32 Base_Address = Gpt_ChannelBaseAddress(Channel); /* Get base address of timer channel*/
+        Gpt_TimerTargetTime[Channel] = Value; /* Save target time in Gpt_TimerTargetTime static array */
+
+        /*
+         * SWS_Gpt_00274,SRS_Gpt_12128: The function Gpt_StartTimer shall start the selected timer channel with a defined target time.
+         */
+
+        /* Check if it is full width timer to load value correctly */
+        if ((Channel > GPT_NORMAL_CHANNELS_MAX_ID) && (GptChannelConfiguration[GptChannelSetting[Channel].Gpt_ChannelConfigIndex].GptChannelTickValueMax > WTIMER_HALF_WIDTH))
+        {
+            /* SWS_Gpt_00274,SRS_Gpt_12128 */
+            TimerLoadSet64(Base_Address, Value); /* SWS_Gpt_00186 */
+            TimerEnable(Base_Address, TIMER_A); /* Start timer */
+
+            /* Uncomment next line to enable timer stalling while debugging */
+            /*TimerControlStall(Base_Address, TIMER_A, TRUE);*/ /* To stop timer while debugging */
+        }
+        else if (Channel % CHECK_TIMER_HALF == TIMER_HALF_A )  /* Check if Channel ID is for timer A or timer B, even for timer A and odd for timer B */
+        {
+            /* SWS_Gpt_00274,SRS_Gpt_12128 */
+            TimerLoadSet(Base_Address, TIMER_A, Value);  /* SWS_Gpt_00186 */
+            TimerEnable(Base_Address, TIMER_A); /* Start timer */
+
+            /* Uncomment next line to enable timer stalling while debugging */
+            /* TimerControlStall(Base_Address, TIMER_A, TRUE);8*/ /* To stop timer while debugging */
+        }
+        else
+        {
+            /* SWS_Gpt_00274,SRS_Gpt_12128 */
+            TimerLoadSet(Base_Address, TIMER_B, Value); /* SWS_Gpt_00186 */
+            TimerEnable(Base_Address, TIMER_B); /* Start timer */
+
+            /* Uncomment next line to enable timer stalling while debugging */
+            /*TimerControlStall(Base_Address, TIMER_B, TRUE);*/ /* To stop timer while debugging */
+
+        }
+
+
+    }
+
+}
+
+/*
+ * Service name: Gpt_StopTimer
+ * SWS_Item: SWS_Gpt_00285
+ * SRS_Item: (SRS_Gpt_12119)
+ * Service ID:0x06
+ * Sync/Async: Synchronous
+ * Reentrancy: Reentrant (but not for the same timer channel)
+ * Description: Stops a timer channel.
+ */
+
+
+void Gpt_StopTimer(Gpt_ChannelType Channel)
+{
+    if (Gpt_State == GPT_UNINITALIZED)
+    {
+#if (GPT_DRIVER_CONFIGURATION_GPT_DEV_ERROR_DETECT == STD_ON)
+
+        /* SWS_Gpt_00225, SRS_BSW_00406 */
+
+        Det_ReportError(MODULE_ID, INSTANCE_ID, GPT_STOP_TIMER_SERVICE_ID, GPT_E_UNINIT);
+#endif
+    }
+    else if (Gpt_CheckChannelIndex(Channel) == FALSE)
+    {
+#if (GPT_DRIVER_CONFIGURATION_GPT_DEV_ERROR_DETECT == STD_ON)
+
+        /* SWS_Gpt_00213 */
+
+        Det_ReportError(MODULE_ID, INSTANCE_ID, GPT_STOP_TIMER_SERVICE_ID, GPT_E_PARAM_CHANNEL);
+#endif
+    }
+    else if (Gpt_ChannelState[Channel] == CHANNEL_RUNNING)
+    {
+
+        /* SWS_Gpt_00343, SWS_Gpt_00116 */
+        Gpt_ChannelState[Channel] = CHANNEL_STOPPED; /* State of the selected timer channel is changed to "stopped" */
+        uint32 Base_Address = Gpt_ChannelBaseAddress(Channel);
+
+        /* SWS_Gpt_00013 */
+        if (Channel % CHECK_TIMER_HALF == TIMER_HALF_A) /* Check if Channel ID is for timer A or timer B, even for timer A and odd for timer B */
+        {
+            TimerDisable(Base_Address, TIMER_A);
+        }
+        else
+        {
+            TimerDisable(Base_Address, TIMER_B);
+        }
+    }
+    else
+    {
+        /*
+         * SWS_Gpt_00099: If the function Gpt_StopTimer is called on a channel in state "initialised",
+         *  "stopped" or "expired", the function shall not raise a development error.
+         *
+         * SWS_Gpt_00344: If the function Gpt_StopTimer is called on a channel in state "initialised",
+         *  "stopped" or "expired", the function shall leave without any action (no change of the channel state).
+         */
+    }
+}
+
